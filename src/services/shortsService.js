@@ -460,7 +460,8 @@ export async function createHighlightMontage({
   localVideoPath,
   segments = [],
   outputName,
-  quality = '4k',
+  streamTitle = '',
+  quality = '1080p',
   cropMode = 'sharp-blur',
 }) {
   const safeBase = (outputName || `montage-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -508,12 +509,19 @@ export async function createHighlightMontage({
   }
   if (fs.existsSync(listFile)) fs.unlinkSync(listFile);
 
-  const targetW = quality === '1080p' ? 1080 : 2160;
-  const targetH = quality === '1080p' ? 1920 : 3840;
+  const targetW = quality === '4k' ? 2160 : 1080;
+  const targetH = quality === '4k' ? 3840 : 1920;
+  const fileName = path.basename(outPath);
+  saveShortMeta(fileName, {
+    streamTitle: streamTitle || safeBase.replace(/[_-]+/g, ' '),
+    momentTitle: 'Best Highlights Montage',
+    liveUrl: url || '',
+    durationSeconds: chosenSegments.reduce((s, c) => s + ((Number(c.endSeconds) || 40) - (Number(c.startSeconds) || 0)), 0),
+  });
   return {
-    fileName: path.basename(outPath),
+    fileName,
     filePath: outPath,
-    publicUrl: `/media/shorts/${path.basename(outPath)}`,
+    publicUrl: `/media/shorts/${fileName}`,
     resolution: `${targetW}x${targetH}`,
     partsCount: chosenSegments.length,
   };
@@ -524,9 +532,14 @@ export function listGeneratedShorts() {
   return fs
     .readdirSync(SHORTS_DIR)
     .filter((f) => f.endsWith('.mp4'))
-    .map((f) => ({
-      fileName: f,
-      publicUrl: `/media/shorts/${f}`,
-      sizeMb: Number((fs.statSync(path.join(SHORTS_DIR, f)).size / (1024 * 1024)).toFixed(2)),
-    }));
+    .map((f) => {
+      const st = fs.statSync(path.join(SHORTS_DIR, f));
+      return {
+        fileName: f,
+        publicUrl: `/media/shorts/${f}`,
+        sizeMb: Number((st.size / (1024 * 1024)).toFixed(2)),
+        mtimeMs: st.mtimeMs,
+      };
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }

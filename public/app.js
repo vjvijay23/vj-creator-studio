@@ -83,13 +83,13 @@ $('btn-save-cookies').addEventListener('click', async () => {
 });
 
 // Media Lists
-async function refreshMediaLists() {
+async function refreshMediaLists(forceAutoFill = false) {
   try {
     const { shorts, final } = await api('/api/shorts/list');
     const all = [
       ...final.map((f) => ({ ...f, folder: 'final' })),
       ...shorts.map((s) => ({ ...s, folder: 'shorts' })),
-    ];
+    ].sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0));
 
     $('shorts-gallery').innerHTML =
       all.length === 0
@@ -107,7 +107,7 @@ async function refreshMediaLists() {
 
     $('voice-short-select').innerHTML =
       shorts.length === 0
-        ? '<option value="">Cut a Short in Tab 1 first</option>'
+        ? '<option value="">Cut a Short in Tab 2 first</option>'
         : shorts.map((s) => `<option value="${s.fileName}">${s.fileName}</option>`).join('');
 
     if (shorts.length > 0 && !$('voice-video-preview').src) {
@@ -119,8 +119,8 @@ async function refreshMediaLists() {
         ? '<option value="">No Shorts yet</option>'
         : all.map((i) => `<option value="${i.folder}|${i.fileName}">[${i.folder}] ${i.fileName}</option>`).join('');
 
-    if (all.length > 0 && !$('push-title').value) {
-      autoFillPushMetadata(all[0].fileName);
+    if (all.length > 0 && (forceAutoFill || !$('push-title').value)) {
+      await autoFillPushMetadata(all[0].fileName);
     }
   } catch (err) {
     console.error(err);
@@ -280,13 +280,14 @@ $('btn-montage-url').addEventListener('click', async () => {
       body: JSON.stringify({
         url,
         segments: segs,
-        outputName: `montage-4k-${Date.now()}`,
+        outputName: `${makeCleanSlug(lastStreamInfo.title, 'Stream')}_Montage`,
+        streamTitle: lastStreamInfo.title || 'Gaming Highlight',
         quality: $('cut-quality').value,
         cropMode: $('cut-crop-mode').value,
       }),
     });
     $('moments-output').textContent = `4K Montage saved: ${data.fileName} (${data.resolution}, ${data.partsCount} clips)`;
-    await refreshMediaLists();
+    await refreshMediaLists(true);
   } catch (err) {
     $('moments-output').textContent = `Error: ${err.message}`;
   }
@@ -328,7 +329,7 @@ $('btn-cut-url').addEventListener('click', async () => {
     });
     const data = await pollCutJob(jobId, $('cut-output'));
     $('cut-output').textContent = `Saved ${data.resolution} Short: ${data.fileName} (${data.durationSeconds}s)`;
-    await refreshMediaLists();
+    await refreshMediaLists(true);
   } catch (err) {
     $('cut-output').textContent = `Error: ${err.message}`;
   }
@@ -353,7 +354,7 @@ $('btn-cut-local').addEventListener('click', async () => {
     const { jobId } = await api('/api/shorts/cut-local', { method: 'POST', body: fd });
     const data = await pollCutJob(jobId, $('cut-output'));
     $('cut-output').textContent = `Saved ${data.resolution} Short: ${data.fileName}`;
-    await refreshMediaLists();
+    await refreshMediaLists(true);
   } catch (err) {
     $('cut-output').textContent = `Error: ${err.message}`;
   }

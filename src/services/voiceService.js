@@ -241,9 +241,14 @@ export function listFinalShorts() {
   return fs
     .readdirSync(FINAL_DIR)
     .filter((f) => f.endsWith('.mp4'))
-    .map((f) => ({
-      fileName: f,
-      publicUrl: `/media/final/${f}`,
-      sizeMb: Number((fs.statSync(path.join(FINAL_DIR, f)).size / (1024 * 1024)).toFixed(2)),
-    }));
+    .map((f) => {
+      const st = fs.statSync(path.join(FINAL_DIR, f));
+      return {
+        fileName: f,
+        publicUrl: `/media/final/${f}`,
+        sizeMb: Number((st.size / (1024 * 1024)).toFixed(2)),
+        mtimeMs: st.mtimeMs,
+      };
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }

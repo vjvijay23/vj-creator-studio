@@ -231,11 +231,12 @@ app.post('/api/shorts/cut-local', uploadVideo.single('video'), async (req, res) 
 
 app.post('/api/shorts/montage', async (req, res) => {
   try {
-    const { url, segments, outputName, quality = '4k', cropMode = 'sharp-blur' } = req.body || {};
+    const { url, segments, outputName, streamTitle = '', quality = '1080p', cropMode = 'sharp-blur' } = req.body || {};
     const result = await createHighlightMontage({
       url,
       segments,
       outputName,
+      streamTitle,
       quality,
       cropMode,
     });
@@ -266,18 +267,23 @@ app.post('/api/shorts/auto-metadata', async (req, res) => {
       .trim();
 
     const finalStreamTitle = saved.streamTitle || cleanName || 'Gaming Live Highlight';
-    const finalMoment = saved.momentTitle ? ` — ${saved.momentTitle}` : '';
+    const isGenericMoment =
+      !saved.momentTitle ||
+      /high-potential segment|highlight moment/i.test(saved.momentTitle);
+    const hookSuffix = isGenericMoment
+      ? 'Insane Highlight Moment!'
+      : saved.momentTitle;
     const finalLiveUrl = saved.liveUrl || liveUrl || '';
     const timeRange =
       saved.startFormatted && saved.endFormatted
-        ? `\n⏱️ Stream Moment: ${saved.startFormatted} – ${saved.endFormatted}`
+        ? `\n⏱️ Highlight Timestamp: ${saved.startFormatted} – ${saved.endFormatted}`
         : '';
 
-    const title = `${finalStreamTitle}${finalMoment} #Shorts`.slice(0, 95);
+    const title = `${finalStreamTitle} | ${hookSuffix} #Shorts`.slice(0, 95);
     const description = [
-      `Watch this intense highlight from my "${finalStreamTitle}" live stream!`,
+      `🔥 Watch this epic moment from my "${finalStreamTitle}" live stream!`,
       finalLiveUrl ? `\n🎬 Full Live Stream Replay: ${finalLiveUrl}${timeRange}` : timeRange.trim(),
-      `\n👍 Like, Share & Subscribe for daily Tamil Gaming Shorts and Live Streams!`,
+      `\n👍 Like, Share & Subscribe to VJ_YT for daily Tamil Gaming Shorts & Live Streams!`,
       `\n#Shorts #TamilGaming #GamingHighlights #YouTubeLive`,
     ]
       .filter(Boolean)
@@ -287,11 +293,12 @@ app.post('/api/shorts/auto-metadata', async (req, res) => {
     const tags = [
       baseTag,
       `${baseTag} highlights`,
+      `${baseTag} tamil`,
       'tamil gaming',
       'tamil gaming shorts',
       'youtube shorts',
       'live stream highlights',
-      'gaming climax',
+      'vj yt',
     ]
       .filter(Boolean)
       .join(', ');
