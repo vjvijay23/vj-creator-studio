@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import {
   config,
   ROOT_DIR,
@@ -16,9 +17,13 @@ import {
 import { getSystemStatus } from './src/services/systemCheck.js';
 import { calculateYouTubeCriteria, generateLiveBoostPack } from './src/services/boosterService.js';
 import {
+  COOKIES_PATH,
+  cutJobs,
+  createJob,
   inspectYouTubeUrl,
   detectHighMoments,
   downloadAndCutShort,
+  createHighlightMontage,
   listGeneratedShorts,
 } from './src/services/shortsService.js';
 import {
@@ -78,6 +83,18 @@ app.post('/api/settings/keys', (req, res) => {
   }
 });
 
+const uploadCookies = multer({ dest: DOWNLOADS_DIR });
+app.post('/api/settings/cookies', uploadCookies.single('cookies'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'cookies.txt file is required.' });
+    fs.copyFileSync(req.file.path, COOKIES_PATH);
+    fs.unlinkSync(req.file.path);
+    res.json({ ok: true, message: 'YouTube cookies.txt saved! Age-restricted streams are now unlocked.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 1. Live Booster & Criteria Tracker
 app.post('/api/criteria', (req, res) => {
   try {
@@ -117,9 +134,34 @@ app.post('/api/shorts/inspect', async (req, res) => {
   }
 });
 
+app.get('/api/jobs/:id', (req, res) => {
+  const job = cutJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found.' });
+  if (job.status === 'running') {
+    job.elapsedSeconds = Math.round((Date.now() - job.startedAt) / 1000);
+  }
+  res.json(job);
+});
+
 app.post('/api/shorts/cut', async (req, res) => {
   try {
-    const { url, startSeconds, endSeconds, outputName, quality = '4k', cropMode = 'sharp-blur' } = req.body || {};
+    const { url, startSeconds, endSeconds, outputName, quality = '1080p', cropMode = 'sharp-blur', async: isAsync = false } = req.body || {};
+    if (isAsync) {
+      const job = createJob(Math.max(15, (Number(endSeconds) || 120) - (Number(startSeconds) || 0)));
+      downloadAndCutShort({ url, startSeconds, endSeconds, outputName, quality, cropMode, job })
+        .then((result) => {
+          job.status = 'done';
+          job.percent = 100;
+          job.etaSeconds = 0;
+          job.stage = 'Completed!';
+          job.result = result;
+        })
+        .catch((err) => {
+          job.status = 'error';
+          job.error = err.message;
+        });
+      return res.json({ jobId: job.id });
+    }
     const result = await downloadAndCutShort({
       url,
       startSeconds,
@@ -137,11 +179,51 @@ app.post('/api/shorts/cut', async (req, res) => {
 app.post('/api/shorts/cut-local', uploadVideo.single('video'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Video file is required.' });
-    const { startSeconds = 0, endSeconds = 120, outputName, quality = '4k', cropMode = 'sharp-blur' } = req.body || {};
+    const { startSeconds = 0, endSeconds = 120, outputName, quality = '1080p', cropMode = 'sharp-blur', async: isAsync = 'false' } = req.body || {};
+    if (isAsync === 'true' || isAsync === true) {
+      const job = createJob(Math.max(15, Number(endSeconds) - Number(startSeconds)));
+      downloadAndCutShort({
+        localVideoPath: req.file.path,
+        startSeconds: Number(startSeconds),
+        endSeconds: Number(endSeconds),
+        outputName,
+        quality,
+        cropMode,
+        job,
+      })
+        .then((result) => {
+          job.status = 'done';
+          job.percent = 100;
+          job.etaSeconds = 0;
+          job.stage = 'Completed!';
+          job.result = result;
+        })
+        .catch((err) => {
+          job.status = 'error';
+          job.error = err.message;
+        });
+      return res.json({ jobId: job.id });
+    }
     const result = await downloadAndCutShort({
       localVideoPath: req.file.path,
       startSeconds: Number(startSeconds),
       endSeconds: Number(endSeconds),
+      outputName,
+      quality,
+      cropMode,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/shorts/montage', async (req, res) => {
+  try {
+    const { url, segments, outputName, quality = '4k', cropMode = 'sharp-blur' } = req.body || {};
+    const result = await createHighlightMontage({
+      url,
+      segments,
       outputName,
       quality,
       cropMode,

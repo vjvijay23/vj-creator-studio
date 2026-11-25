@@ -67,6 +67,21 @@ $('btn-save-keys').addEventListener('click', async () => {
   }
 });
 
+$('btn-save-cookies').addEventListener('click', async () => {
+  const file = $('cookies-file').files[0];
+  if (!file) return;
+  $('keys-status').style.display = 'block';
+  $('keys-status').textContent = 'Uploading cookies.txt...';
+  try {
+    const fd = new FormData();
+    fd.append('cookies', file);
+    const data = await api('/api/settings/cookies', { method: 'POST', body: fd });
+    $('keys-status').textContent = data.message;
+  } catch (err) {
+    $('keys-status').textContent = `Error: ${err.message}`;
+  }
+});
+
 // Media Lists
 async function refreshMediaLists() {
   try {
@@ -85,6 +100,7 @@ async function refreshMediaLists() {
           <div class="video-card">
             <video src="${item.publicUrl}" controls></video>
             <div class="muted" style="margin-top:6px;">[${item.folder}] ${item.fileName} (${item.sizeMb} MB)</div>
+            <a href="${item.publicUrl}" download="${item.fileName}" class="btn-outline full" style="display:block; text-align:center; text-decoration:none; margin-top:8px;">⬇ Download MP4</a>
           </div>`
             )
             .join('');
@@ -113,6 +129,8 @@ $('voice-short-select').addEventListener('change', (e) => {
   }
 });
 
+let lastDetectedMoments = [];
+
 // Tab 1: 4K Shorts Cutter
 $('btn-inspect-url').addEventListener('click', async () => {
   $('moments-output').textContent = 'Inspecting YouTube link & detecting highlight scenes...';
@@ -126,6 +144,7 @@ $('btn-inspect-url').addEventListener('click', async () => {
       }),
     });
     const { info, moments } = data;
+    lastDetectedMoments = moments || [];
     $('moments-output').innerHTML =
       `<div><strong>${info.title}</strong> (${Math.round(info.duration)}s)</div>` +
       moments
@@ -153,10 +172,67 @@ window.cutMoment = (startSeconds, endSeconds, id) => {
   $('btn-cut-url').click();
 };
 
-$('btn-cut-url').addEventListener('click', async () => {
-  $('cut-output').textContent = 'Downloading 4K source & rendering crisp 9:16 Short...';
+$('btn-montage-url').addEventListener('click', async () => {
+  const url = $('yt-url').value;
+  if (!url) {
+    $('moments-output').textContent = 'Paste a YouTube Live/Video URL first.';
+    return;
+  }
+  $('moments-output').textContent = 'Building 4K High-Moment Montage (cutting top highlights & stitching)...';
   try {
-    const data = await api('/api/shorts/cut', {
+    let segs = lastDetectedMoments.map((m) => ({
+      startSeconds: m.startSeconds,
+      endSeconds: Math.min(m.endSeconds, m.startSeconds + 40),
+    }));
+    if (segs.length === 0) {
+      const inspected = await api('/api/shorts/inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, maxShortSeconds: 40 }),
+      });
+      segs = (inspected.moments || []).map((m) => ({
+        startSeconds: m.startSeconds,
+        endSeconds: m.endSeconds,
+      }));
+    }
+    const data = await api('/api/shorts/montage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        segments: segs,
+        outputName: `montage-4k-${Date.now()}`,
+        quality: $('cut-quality').value,
+        cropMode: $('cut-crop-mode').value,
+      }),
+    });
+    $('moments-output').textContent = `4K Montage saved: ${data.fileName} (${data.resolution}, ${data.partsCount} clips)`;
+    await refreshMediaLists();
+  } catch (err) {
+    $('moments-output').textContent = `Error: ${err.message}`;
+  }
+});
+
+async function pollCutJob(jobId, targetEl) {
+  while (true) {
+    const j = await api(`/api/jobs/${jobId}`);
+    const etaText = j.etaSeconds !== null ? `~${j.etaSeconds}s left` : 'calculating ETA...';
+    const speedText = j.speed ? `${j.speed}x` : '—';
+    targetEl.innerHTML = `
+      <div style="font-weight:700; margin-bottom:6px;">${j.stage} (${j.percent}%)</div>
+      <div class="bar-track" style="margin-bottom:8px;"><div class="bar-fill" style="width:${j.percent}%"></div></div>
+      <div class="muted">Cut: ${j.processedSeconds}s / ${j.totalSeconds}s &bull; Speed: ${speedText} &bull; Elapsed: ${j.elapsedSeconds}s &bull; ETA: ${etaText}</div>
+    `;
+    if (j.status === 'done') return j.result;
+    if (j.status === 'error') throw new Error(j.error || 'Cut failed');
+    await new Promise((r) => setTimeout(r, 800));
+  }
+}
+
+$('btn-cut-url').addEventListener('click', async () => {
+  $('cut-output').textContent = 'Starting cut job...';
+  try {
+    const { jobId } = await api('/api/shorts/cut', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -166,8 +242,10 @@ $('btn-cut-url').addEventListener('click', async () => {
         outputName: $('cut-name').value,
         quality: $('cut-quality').value,
         cropMode: $('cut-crop-mode').value,
+        async: true,
       }),
     });
+    const data = await pollCutJob(jobId, $('cut-output'));
     $('cut-output').textContent = `Saved ${data.resolution} Short: ${data.fileName} (${data.durationSeconds}s)`;
     await refreshMediaLists();
   } catch (err) {
@@ -181,7 +259,7 @@ $('btn-cut-local').addEventListener('click', async () => {
     $('cut-output').textContent = 'Please select a local video file first.';
     return;
   }
-  $('cut-output').textContent = 'Rendering local video into 4K 9:16 Short...';
+  $('cut-output').textContent = 'Uploading video & starting cut job...';
   try {
     const fd = new FormData();
     fd.append('video', file);
@@ -190,7 +268,9 @@ $('btn-cut-local').addEventListener('click', async () => {
     fd.append('outputName', $('cut-name').value);
     fd.append('quality', $('cut-quality').value);
     fd.append('cropMode', $('cut-crop-mode').value);
-    const data = await api('/api/shorts/cut-local', { method: 'POST', body: fd });
+    fd.append('async', 'true');
+    const { jobId } = await api('/api/shorts/cut-local', { method: 'POST', body: fd });
+    const data = await pollCutJob(jobId, $('cut-output'));
     $('cut-output').textContent = `Saved ${data.resolution} Short: ${data.fileName}`;
     await refreshMediaLists();
   } catch (err) {
@@ -423,11 +503,16 @@ $('btn-upload-yt').addEventListener('click', async () => {
     fd.append('liveStreamUrl', $('push-live-url').value);
     fd.append('tags', $('push-tags').value);
     fd.append('privacyStatus', $('push-privacy').value);
+    if ($('push-schedule').value) {
+      fd.append('publishAt', $('push-schedule').value);
+    }
     const thumbFile = $('push-thumb-file').files[0];
     if (thumbFile) fd.append('thumbnail', thumbFile);
 
     const data = await api('/api/youtube/upload', { method: 'POST', body: fd });
-    $('push-output').textContent = `Uploaded! URL: ${data.url} (${data.privacyStatus})`;
+    $('push-output').textContent = data.publishAt
+      ? `Scheduled! URL: ${data.url} (Publishes at ${new Date(data.publishAt).toLocaleString()})`
+      : `Uploaded! URL: ${data.url} (${data.privacyStatus})`;
   } catch (err) {
     $('push-output').textContent = `Error: ${err.message}`;
   }

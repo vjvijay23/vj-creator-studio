@@ -155,6 +155,7 @@ export async function uploadShortToYouTube({
   description,
   tags = [],
   privacyStatus = 'private',
+  publishAt = '',
   liveStreamUrl = '',
   thumbnailPath = '',
 }) {
@@ -172,6 +173,14 @@ export async function uploadShortToYouTube({
     liveStreamUrl ? `\n\nWatch Full Live Stream: ${liveStreamUrl}` : ''
   }\n\n#Shorts #YouTubeLive`.trim();
 
+  const statusObj = {
+    privacyStatus: publishAt ? 'private' : privacyStatus,
+    selfDeclaredMadeForKids: false,
+  };
+  if (publishAt) {
+    statusObj.publishAt = new Date(publishAt).toISOString();
+  }
+
   const res = await youtube.videos.insert({
     part: ['snippet', 'status'],
     requestBody: {
@@ -181,10 +190,7 @@ export async function uploadShortToYouTube({
         tags: Array.isArray(tags) ? tags : [],
         categoryId: '20',
       },
-      status: {
-        privacyStatus,
-        selfDeclaredMadeForKids: false,
-      },
+      status: statusObj,
     },
     media: {
       body: fs.createReadStream(videoPath),
@@ -201,6 +207,7 @@ export async function uploadShortToYouTube({
   return {
     videoId: res.data.id,
     url: `https://youtube.com/shorts/${res.data.id}`,
-    privacyStatus,
+    privacyStatus: statusObj.privacyStatus,
+    publishAt: statusObj.publishAt || null,
   };
 }

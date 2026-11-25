@@ -197,12 +197,14 @@ export async function mixVoiceoverIntoShort({
       '[vout]',
       '-map',
       '[aout]',
+      '-threads',
+      '4',
       '-c:v',
       'libx264',
       '-preset',
-      'medium',
+      'veryfast',
       '-crf',
-      '16',
+      '18',
       '-pix_fmt',
       'yuv420p'
     );

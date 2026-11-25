@@ -1,12 +1,76 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
-import { config, DOWNLOADS_DIR, SHORTS_DIR } from '../config/env.js';
+import { config, DATA_DIR, DOWNLOADS_DIR, SHORTS_DIR } from '../config/env.js';
 import { getFfmpegPath, getYtdlpPath } from '../config/binaries.js';
 
 const execFileAsync = promisify(execFile);
+export const COOKIES_PATH = path.join(DATA_DIR, 'cookies.txt');
+
+export const cutJobs = new Map();
+
+export function createJob(totalSeconds = 120, stage = 'Starting...') {
+  const id = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const job = {
+    id,
+    status: 'running',
+    stage,
+    percent: 0,
+    processedSeconds: 0,
+    totalSeconds,
+    speed: 0,
+    elapsedSeconds: 0,
+    etaSeconds: null,
+    startedAt: Date.now(),
+    result: null,
+    error: null,
+  };
+  cutJobs.set(id, job);
+  return job;
+}
+
+function runFfmpegWithProgress(args, totalSeconds, job) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(getFfmpegPath(), args);
+    let stderrTail = '';
+
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      stderrTail = (stderrTail + text).slice(-2000);
+
+      const timeMatch = text.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/);
+      const speedMatch = text.match(/speed=\s*(\d+(?:\.\d+)?)x/);
+
+      if (timeMatch && job) {
+        const secs =
+          Number(timeMatch[1]) * 3600 + Number(timeMatch[2]) * 60 + Number(timeMatch[3]);
+        const speed = speedMatch ? Number(speedMatch[1]) : job.speed;
+        const pct = Math.min(99, Math.round((secs / Math.max(1, totalSeconds)) * 100));
+        const elapsed = Math.round((Date.now() - job.startedAt) / 1000);
+        const remaining = Math.max(0, totalSeconds - secs);
+        const eta = speed > 0 ? Math.round(remaining / speed) : null;
+
+        job.processedSeconds = Math.round(secs);
+        job.percent = pct;
+        job.speed = speed;
+        job.elapsedSeconds = elapsed;
+        job.etaSeconds = eta;
+      }
+    });
+
+    proc.on('error', (err) => reject(err));
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg exited with code ${code}: ${stderrTail.slice(-300)}`));
+    });
+  });
+}
+
+function getCookieArgs() {
+  return fs.existsSync(COOKIES_PATH) ? ['--cookies', COOKIES_PATH] : [];
+}
 
 function formatTimestamp(seconds) {
   const s = Math.max(0, Math.floor(seconds));
@@ -22,7 +86,7 @@ export async function inspectYouTubeUrl(url) {
   try {
     const { stdout } = await execFileAsync(
       getYtdlpPath(),
-      ['--dump-single-json', '--no-warnings', '--skip-download', url],
+      [...getCookieArgs(), '--dump-single-json', '--no-warnings', '--skip-download', url],
       { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }
     );
     const info = JSON.parse(stdout);
@@ -39,6 +103,11 @@ export async function inspectYouTubeUrl(url) {
       webpageUrl: info.webpage_url || url,
     };
   } catch (err) {
+    if (String(err.message).includes('Sign in to confirm your age')) {
+      throw new Error(
+        'This YouTube stream is age-restricted. Open "API Keys" in the top bar and upload your YouTube cookies.txt file (or upload the downloaded .mp4 directly on the right).'
+      );
+    }
     throw new Error(
       `Could not inspect YouTube URL via yt-dlp (${err.message}). Make sure yt-dlp is installed and the URL is public.`
     );
@@ -151,8 +220,9 @@ export async function downloadAndCutShort({
   startSeconds = 0,
   endSeconds = 120,
   outputName,
-  quality = '4k',
+  quality = '1080p',
   cropMode = 'sharp-blur',
+  job = null,
 }) {
   const safeBase = (outputName || `short-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
   let sourceFile = localVideoPath;
@@ -160,12 +230,19 @@ export async function downloadAndCutShort({
   const end = Math.max(start + 15, Number(endSeconds) || start + 120);
   const duration = Math.min(180, Math.max(5, end - start));
 
+  if (job) {
+    job.totalSeconds = duration;
+    job.stage = localVideoPath ? 'Preparing local video...' : 'Downloading stream segment...';
+    job.elapsedSeconds = Math.round((Date.now() - job.startedAt) / 1000);
+  }
+
   if (!sourceFile) {
     if (!url) throw new Error('Either a YouTube URL or a local video file is required.');
     sourceFile = path.join(DOWNLOADS_DIR, `${safeBase}-source.mp4`);
     await execFileAsync(
       getYtdlpPath(),
       [
+        ...getCookieArgs(),
         '--ffmpeg-location',
         path.dirname(getFfmpegPath()),
         '--download-sections',
@@ -186,9 +263,13 @@ export async function downloadAndCutShort({
     throw new Error('Source video file was not found after download.');
   }
 
+  if (job) {
+    job.stage = `Encoding ${quality === '4k' ? '4K' : '1080p'} 9:16 Short...`;
+  }
+
   const outPath = path.join(SHORTS_DIR, `${safeBase}.mp4`);
-  const targetW = quality === '1080p' ? 1080 : 2160;
-  const targetH = quality === '1080p' ? 1920 : 3840;
+  const targetW = quality === '4k' ? 2160 : 1080;
+  const targetH = quality === '4k' ? 3840 : 1920;
 
   const args = ['-y'];
   if (localVideoPath) {
@@ -202,13 +283,13 @@ export async function downloadAndCutShort({
   if (cropMode === 'full-crop') {
     args.push(
       '-vf',
-      `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${targetW}:${targetH}`
+      `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase:flags=bilinear,crop=${targetW}:${targetH},setsar=1`
     );
   } else {
-    // Sharp-blur 9:16: preserves 100% original sharpness without stretching/pixelation
+    // Fast sharp-blur 9:16: blur at tiny 270x480 then upscale bg (50x faster, zero laptop lag), keep fg razor-sharp
     args.push(
       '-filter_complex',
-      `[0:v]scale=${targetW}:${targetH}:force_original_aspect_ratio=increase:flags=lanczos,crop=${targetW}:${targetH},boxblur=30:5,eq=brightness=-0.12[bg];[0:v]scale=${targetW}:-2:flags=lanczos[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[vout]`,
+      `[0:v]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=8:2,eq=brightness=-0.12,scale=${targetW}:${targetH}:flags=bilinear,setsar=1[bg];[0:v]scale=${targetW}:-2:flags=lanczos,setsar=1[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[vout]`,
       '-map',
       '[vout]',
       '-map',
@@ -217,27 +298,26 @@ export async function downloadAndCutShort({
   }
 
   args.push(
+    '-threads',
+    '4',
     '-c:v',
     'libx264',
     '-preset',
-    'medium',
+    'veryfast',
     '-crf',
-    '16',
+    '18',
     '-pix_fmt',
     'yuv420p',
     '-c:a',
     'aac',
     '-b:a',
-    '256k',
+    '192k',
     '-movflags',
     '+faststart',
     outPath
   );
 
-  await execFileAsync(getFfmpegPath(), args, {
-    timeout: 15 * 60 * 1000,
-    maxBuffer: 10 * 1024 * 1024,
-  });
+  await runFfmpegWithProgress(args, duration, job);
 
   return {
     fileName: path.basename(outPath),
@@ -245,6 +325,70 @@ export async function downloadAndCutShort({
     publicUrl: `/media/shorts/${path.basename(outPath)}`,
     durationSeconds: duration,
     resolution: `${targetW}x${targetH}`,
+  };
+}
+
+export async function createHighlightMontage({
+  url,
+  localVideoPath,
+  segments = [],
+  outputName,
+  quality = '4k',
+  cropMode = 'sharp-blur',
+}) {
+  const safeBase = (outputName || `montage-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const chosenSegments =
+    Array.isArray(segments) && segments.length > 0
+      ? segments.slice(0, 4)
+      : [
+          { startSeconds: 600, endSeconds: 640 },
+          { startSeconds: 2400, endSeconds: 2440 },
+          { startSeconds: 5400, endSeconds: 5440 },
+        ];
+
+  const partFiles = [];
+  for (let i = 0; i < chosenSegments.length; i += 1) {
+    const seg = chosenSegments[i];
+    const part = await downloadAndCutShort({
+      url,
+      localVideoPath,
+      startSeconds: Number(seg.startSeconds) || 0,
+      endSeconds: Number(seg.endSeconds) || (Number(seg.startSeconds) || 0) + 40,
+      outputName: `${safeBase}_part${i + 1}`,
+      quality,
+      cropMode,
+    });
+    partFiles.push(part.filePath);
+  }
+
+  const listFile = path.join(DOWNLOADS_DIR, `${safeBase}-concat.txt`);
+  fs.writeFileSync(
+    listFile,
+    partFiles.map((p) => `file '${p.replace(/\\/g, '/').replace(/'/g, "'\\''")}'`).join('\n'),
+    'utf-8'
+  );
+
+  const outPath = path.join(SHORTS_DIR, `${safeBase}.mp4`);
+  await execFileAsync(
+    getFfmpegPath(),
+    ['-y', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', '-movflags', '+faststart', outPath],
+    { timeout: 10 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 }
+  );
+
+  // Clean up temporary individual parts
+  for (const p of partFiles) {
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  }
+  if (fs.existsSync(listFile)) fs.unlinkSync(listFile);
+
+  const targetW = quality === '1080p' ? 1080 : 2160;
+  const targetH = quality === '1080p' ? 1920 : 3840;
+  return {
+    fileName: path.basename(outPath),
+    filePath: outPath,
+    publicUrl: `/media/shorts/${path.basename(outPath)}`,
+    resolution: `${targetW}x${targetH}`,
+    partsCount: chosenSegments.length,
   };
 }
 

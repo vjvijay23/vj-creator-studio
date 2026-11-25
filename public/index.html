@@ -18,10 +18,10 @@
       </div>
 
       <nav class="nav-pills" role="tablist">
-        <button class="nav-pill active" data-tab="shorts">1. 4K Shorts Cutter</button>
-        <button class="nav-pill" data-tab="voice">2. My Voice &amp; Subtitles</button>
-        <button class="nav-pill" data-tab="booster">3. Live Boost &amp; Criteria</button>
-        <button class="nav-pill" data-tab="push">4. Push to YouTube</button>
+        <button class="nav-pill active" data-tab="push">1. YT Dashboard</button>
+        <button class="nav-pill" data-tab="shorts">2. 4K Shorts Cutter</button>
+        <button class="nav-pill" data-tab="voice">3. My Voice &amp; Subtitles</button>
+        <button class="nav-pill" data-tab="booster">4. Live Boost &amp; Criteria</button>
       </nav>
 
       <div class="nav-right">
@@ -32,8 +32,8 @@
   </header>
 
   <main class="page">
-    <!-- TAB 1: 4K Shorts Cutter (Primary Workspace) -->
-    <section id="tab-shorts" class="panel active">
+    <!-- TAB 2: 4K Shorts Cutter -->
+    <section id="tab-shorts" class="panel">
       <div class="split-layout">
         <div class="surface">
           <div class="surface-head">
@@ -51,8 +51,8 @@
               </label>
               <label>Output Quality
                 <select id="cut-quality">
-                  <option value="4k" selected>4K Ultra HD (2160×3840)</option>
-                  <option value="1080p">Full HD (1080×1920)</option>
+                  <option value="1080p" selected>Full HD Fast (1080×1920 — Recommended)</option>
+                  <option value="4k">4K Ultra HD (2160×3840 — Slower)</option>
                 </select>
               </label>
             </div>
@@ -63,6 +63,7 @@
               </select>
             </label>
             <button id="btn-inspect-url" class="btn-primary" type="button">Find Highlights in Stream</button>
+            <button id="btn-montage-url" class="btn-dark" type="button">Auto-Build 4K Highlight Montage</button>
           </div>
           <div id="moments-output" class="console-box"></div>
         </div>
@@ -203,8 +204,15 @@
       </div>
     </section>
 
-    <!-- TAB 4: Push to YouTube & Channel Dashboard -->
-    <section id="tab-push" class="panel">
+    <!-- TAB 1: YT Dashboard & Push to YouTube -->
+    <section id="tab-push" class="panel active">
+      <div class="steps-banner mb-lg">
+        <div class="step-box"><span>Step 1</span><strong>Connect &amp; Check Reach</strong><small>Link YouTube below &amp; review your growth plan</small></div>
+        <div class="step-box"><span>Step 2</span><strong>Cut 4K Shorts / Montage</strong><small>Tab 2: Cut true 2160×3840 highlights</small></div>
+        <div class="step-box"><span>Step 3</span><strong>Add Your Tamil Voice</strong><small>Tab 3: Record mic + studio EQ + Tamil subs</small></div>
+        <div class="step-box"><span>Step 4</span><strong>Schedule &amp; Publish</strong><small>Pick date/time below to push to YouTube</small></div>
+      </div>
+
       <div class="surface mb-lg">
         <div class="surface-head">
           <h2>My YouTube Channel Dashboard</h2>
@@ -256,11 +264,14 @@
                 <select id="push-privacy">
                   <option value="private">Private</option>
                   <option value="unlisted">Unlisted</option>
-                  <option value="public">Public</option>
+                  <option value="public">Public (Publish Now)</option>
                 </select>
               </label>
             </div>
-            <button id="btn-upload-yt" class="btn-primary" type="button">Upload to YouTube</button>
+            <label>Schedule Publish Date &amp; Time (Optional — overrides Privacy to Scheduled)
+              <input id="push-schedule" type="datetime-local" />
+            </label>
+            <button id="btn-upload-yt" class="btn-primary" type="button">Upload / Schedule on YouTube</button>
           </div>
           <div id="push-output" class="console-box"></div>
         </div>
@@ -281,6 +292,11 @@
         <label>Gemini API Key (optional, for AI SEO/Scripts) <input id="key-gemini" type="password" placeholder="AIzaSy..." /></label>
         <button id="btn-save-keys" class="btn-primary" type="button">Save Keys</button>
         <div id="keys-status" class="console-box" style="display:none;"></div>
+        <hr class="sep" />
+        <label>YouTube cookies.txt (for Age-Restricted Streams)
+          <input id="cookies-file" type="file" accept=".txt" />
+        </label>
+        <button id="btn-save-cookies" class="btn-dark" type="button">Upload cookies.txt</button>
       </div>
     </div>
   </div>
