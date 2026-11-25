@@ -96,36 +96,118 @@ function formatTimestamp(seconds) {
     : `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
-export async function inspectYouTubeUrl(url) {
+function extractVideoId(url) {
+  const m = String(url || '').match(/(?:v=|\/live\/|youtu\.be\/|\/shorts\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : '';
+}
+
+function parseIsoDuration(iso) {
+  const m = String(iso || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  return (Number(m[1]) || 0) * 3600 + (Number(m[2]) || 0) * 60 + (Number(m[3]) || 0);
+}
+
+async function inspectViaYouTubeFallback(url) {
+  const videoId = extractVideoId(url);
+  if (!videoId) throw new Error('Invalid YouTube URL.');
+
+  // Try connected YouTube OAuth if available
   try {
-    const { stdout } = await execFileAsync(
-      getYtdlpPath(),
-      [...getCookieArgs(), '--dump-single-json', '--no-warnings', '--skip-download', url],
-      { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }
-    );
-    const info = JSON.parse(stdout);
-    return {
-      id: info.id,
-      title: info.title || 'YouTube Video',
-      duration: Number(info.duration) || 0,
-      uploader: info.uploader || info.channel || 'Unknown',
-      viewCount: Number(info.view_count) || 0,
-      isLive: Boolean(info.is_live),
-      heatmap: Array.isArray(info.heatmap) ? info.heatmap : [],
-      chapters: Array.isArray(info.chapters) ? info.chapters : [],
-      thumbnail: info.thumbnail || '',
-      webpageUrl: info.webpage_url || url,
-    };
-  } catch (err) {
-    if (String(err.message).includes('Sign in to confirm your age')) {
-      throw new Error(
-        'This YouTube stream is age-restricted. Open "API Keys" in the top bar and upload your YouTube cookies.txt file (or upload the downloaded .mp4 directly on the right).'
-      );
+    const tokensPath = path.join(DATA_DIR, 'youtube_tokens.json');
+    if (fs.existsSync(tokensPath) && config.youtubeClientId && config.youtubeClientSecret) {
+      const { google } = await import('googleapis');
+      const auth = new google.auth.OAuth2(config.youtubeClientId, config.youtubeClientSecret);
+      auth.setCredentials(JSON.parse(fs.readFileSync(tokensPath, 'utf-8')));
+      const yt = google.youtube({ version: 'v3', auth });
+      const res = await yt.videos.list({ part: ['snippet', 'contentDetails', 'statistics'], id: [videoId] });
+      const v = res.data.items?.[0];
+      if (v) {
+        return {
+          id: v.id,
+          title: v.snippet?.title || 'YouTube Video',
+          duration: parseIsoDuration(v.contentDetails?.duration) || 1800,
+          uploader: v.snippet?.channelTitle || 'Creator',
+          viewCount: Number(v.statistics?.viewCount) || 0,
+          isLive: v.snippet?.liveBroadcastContent === 'live',
+          heatmap: [],
+          chapters: [],
+          thumbnail: v.snippet?.thumbnails?.high?.url || '',
+          webpageUrl: url,
+        };
+      }
     }
+  } catch {}
+
+  // Public oEmbed fallback (works without auth/cookies)
+  const oembedResp = await fetch(
+    `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`
+  );
+  if (oembedResp.ok) {
+    const oe = await oembedResp.json();
+    return {
+      id: videoId,
+      title: oe.title || 'YouTube Video',
+      duration: 1800,
+      uploader: oe.author_name || 'Creator',
+      viewCount: 0,
+      isLive: false,
+      heatmap: [],
+      chapters: [],
+      thumbnail: oe.thumbnail_url || '',
+      webpageUrl: url,
+    };
+  }
+  throw new Error('Could not fetch video metadata.');
+}
+
+export async function inspectYouTubeUrl(url) {
+  const cookieArgs = getCookieArgs();
+  const baseArgs = ['--dump-single-json', '--no-warnings', '--skip-download'];
+  const attempts = cookieArgs.length > 0
+    ? [[...cookieArgs, ...baseArgs, url]]
+    : [
+        [...baseArgs, url],
+        ['--extractor-args', 'youtube:player_client=tv,web_embedded', ...baseArgs, url],
+      ];
+
+  let lastErr = null;
+  for (const args of attempts) {
+    try {
+      const { stdout } = await execFileAsync(getYtdlpPath(), args, {
+        timeout: 30000,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      const info = JSON.parse(stdout);
+      return {
+        id: info.id,
+        title: info.title || 'YouTube Video',
+        duration: Number(info.duration) || 0,
+        uploader: info.uploader || info.channel || 'Unknown',
+        viewCount: Number(info.view_count) || 0,
+        isLive: Boolean(info.is_live),
+        heatmap: Array.isArray(info.heatmap) ? info.heatmap : [],
+        chapters: Array.isArray(info.chapters) ? info.chapters : [],
+        thumbnail: info.thumbnail || '',
+        webpageUrl: info.webpage_url || url,
+      };
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+
+  const msg = String(lastErr?.message || '');
+  if (msg.includes('not a bot')) {
+    // Cloud server IP bot-check: fall back to YouTube API / oEmbed for metadata inspection
+    return await inspectViaYouTubeFallback(url);
+  }
+  if (msg.includes('Sign in to confirm your age')) {
     throw new Error(
-      `Could not inspect YouTube URL via yt-dlp (${err.message}). Make sure yt-dlp is installed and the URL is public.`
+      'This YouTube stream is age-restricted. Open "API Keys" in the top bar and upload your YouTube cookies.txt file (or upload the downloaded .mp4 directly on the right).'
     );
   }
+  throw new Error(
+    `Could not inspect YouTube URL via yt-dlp (${msg}). Make sure yt-dlp is installed and the URL is public.`
+  );
 }
 
 export async function detectHighMoments({
@@ -255,24 +337,43 @@ export async function downloadAndCutShort({
   if (!sourceFile) {
     if (!url) throw new Error('Either a YouTube URL or a local video file is required.');
     sourceFile = path.join(DOWNLOADS_DIR, `${safeBase}-source.mp4`);
-    await execFileAsync(
-      getYtdlpPath(),
-      [
-        ...getCookieArgs(),
-        '--ffmpeg-location',
-        path.dirname(getFfmpegPath()),
-        '--download-sections',
-        `*${start}-${end}`,
-        '-f',
-        'bv*[height<=2160][ext=mp4]+ba[ext=m4a]/bv*[height<=2160]+ba/b',
-        '--merge-output-format',
-        'mp4',
-        '-o',
-        sourceFile,
-        url,
-      ],
-      { timeout: 10 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 }
-    );
+    const cookieArgs = getCookieArgs();
+    const dlArgs = [
+      ...cookieArgs,
+      '--ffmpeg-location',
+      path.dirname(getFfmpegPath()),
+      '--download-sections',
+      `*${start}-${end}`,
+      '-f',
+      'bv*[height<=2160][ext=mp4]+ba[ext=m4a]/bv*[height<=2160]+ba/b',
+      '--merge-output-format',
+      'mp4',
+      '-o',
+      sourceFile,
+      url,
+    ];
+    try {
+      await execFileAsync(getYtdlpPath(), dlArgs, {
+        timeout: 10 * 60 * 1000,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+    } catch (dlErr) {
+      if (cookieArgs.length === 0 && String(dlErr.message).includes('not a bot')) {
+        try {
+          await execFileAsync(
+            getYtdlpPath(),
+            ['--extractor-args', 'youtube:player_client=tv,web_embedded', ...dlArgs],
+            { timeout: 10 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 }
+          );
+        } catch (retryErr) {
+          throw new Error(
+            'YouTube blocked this cloud server IP ("Sign in to confirm you\'re not a bot"). Open "API Keys" and upload your YouTube cookies.txt, or upload the .mp4 directly on the right.'
+          );
+        }
+      } else {
+        throw dlErr;
+      }
+    }
   }
 
   if (!fs.existsSync(sourceFile)) {
