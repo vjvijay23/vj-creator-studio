@@ -241,6 +241,32 @@ app.get('/api/shorts/list', (_req, res) => {
   });
 });
 
+app.post('/api/shorts/auto-metadata', async (req, res) => {
+  try {
+    const { fileName = '', liveUrl = '' } = req.body || {};
+    const cleanName = fileName
+      .replace(/^voiced-/, '')
+      .replace(/\.mp4$/i, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\b\d{10,}\b/g, '')
+      .trim();
+    const pack = await generateLiveBoostPack({
+      topic: cleanName || 'Epic Gaming Highlight',
+      niche: 'Tamil Gaming',
+      language: 'Tamil',
+      liveUrl,
+    });
+    const baseTitle = (pack.titles?.[0] || `${cleanName || 'Live Highlight'} Tamil`).slice(0, 88);
+    res.json({
+      title: baseTitle.includes('#Shorts') ? baseTitle : `${baseTitle} #Shorts`,
+      description: pack.description || `Watch the full live stream!${liveUrl ? `\n${liveUrl}` : ''}`,
+      tags: (pack.tags || ['tamil gaming', 'youtube shorts', 'live highlights']).join(', '),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 3. AI Voice Cloning & Commentary
 app.post('/api/voice/script', async (req, res) => {
   try {

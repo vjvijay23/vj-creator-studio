@@ -118,10 +118,75 @@ async function refreshMediaLists() {
       all.length === 0
         ? '<option value="">No Shorts yet</option>'
         : all.map((i) => `<option value="${i.folder}|${i.fileName}">[${i.folder}] ${i.fileName}</option>`).join('');
+
+    if (all.length > 0 && !$('push-title').value) {
+      autoFillPushMetadata(all[0].fileName);
+    }
   } catch (err) {
     console.error(err);
   }
 }
+
+async function autoFillPushMetadata(fileName) {
+  if (!fileName) return;
+  try {
+    const liveUrl = $('yt-url')?.value || $('push-live-url')?.value || '';
+    const meta = await api('/api/shorts/auto-metadata', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName, liveUrl }),
+    });
+    $('push-title').value = meta.title;
+    $('push-desc').value = meta.description;
+    $('push-tags').value = meta.tags;
+    if (liveUrl && !$('push-live-url').value) {
+      $('push-live-url').value = liveUrl;
+    }
+  } catch (err) {
+    console.error('Auto-metadata error:', err);
+  }
+}
+
+$('push-file-select').addEventListener('change', (e) => {
+  const val = e.target.value;
+  if (val) {
+    const [, fileName] = val.split('|');
+    autoFillPushMetadata(fileName);
+  }
+});
+
+// Pre-Cut Preview (YouTube Embed or Local Video)
+function extractYouTubeId(url) {
+  const m = String(url || '').match(/(?:v=|\/live\/|youtu\.be\/|\/shorts\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : '';
+}
+
+$('btn-preview-cut').addEventListener('click', () => {
+  const start = Math.max(0, Number($('cut-start').value) || 0);
+  const end = Math.max(start + 5, Number($('cut-end').value) || start + 120);
+  const url = $('yt-url').value;
+  const localFile = $('local-video-file').files[0];
+  const box = $('precut-preview-box');
+  box.style.display = 'block';
+
+  if (localFile) {
+    const objUrl = URL.createObjectURL(localFile);
+    box.innerHTML = `<video id="local-precut-vid" src="${objUrl}" controls style="width:100%; border-radius:10px; max-height:260px; background:#000;"></video>`;
+    const vid = $('local-precut-vid');
+    vid.onloadedmetadata = () => {
+      vid.currentTime = start;
+      vid.play().catch(() => {});
+    };
+    return;
+  }
+
+  const ytId = extractYouTubeId(url);
+  if (ytId) {
+    box.innerHTML = `<iframe width="100%" height="250" style="border-radius:10px; border:0;" src="https://www.youtube.com/embed/${ytId}?start=${start}&end=${end}&autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+  } else {
+    box.innerHTML = '<div class="console-box">Paste a YouTube URL or choose a local .mp4 file to preview.</div>';
+  }
+});
 
 $('voice-short-select').addEventListener('change', (e) => {
   if (e.target.value) {
