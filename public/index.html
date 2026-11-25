@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VJ Creator Studio — 4K Shorts & Voice</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="navbar">
+    <div class="nav-inner">
+      <div class="brand">
+        <div class="brand-badge">4K</div>
+        <div>
+          <div class="brand-title">VJ Creator Studio</div>
+          <div class="brand-sub">100% Free • 4K Shorts • Your Own Voice</div>
+        </div>
+      </div>
+
+      <nav class="nav-pills" role="tablist">
+        <button class="nav-pill active" data-tab="shorts">1. 4K Shorts Cutter</button>
+        <button class="nav-pill" data-tab="voice">2. My Voice &amp; Subtitles</button>
+        <button class="nav-pill" data-tab="booster">3. Live Boost &amp; Criteria</button>
+        <button class="nav-pill" data-tab="push">4. Push to YouTube</button>
+      </nav>
+
+      <div class="nav-right">
+        <div id="status-pills" class="status-row"></div>
+        <button id="btn-open-keys" class="btn-outline" type="button">API Keys</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <!-- TAB 1: 4K Shorts Cutter (Primary Workspace) -->
+    <section id="tab-shorts" class="panel active">
+      <div class="split-layout">
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Cut 4K Vertical Shorts (2–3 Min)</h2>
+            <span class="chip">2160×3840 • CRF 16</span>
+          </div>
+          <p class="hint">Paste any YouTube Live/VOD link. We download up to 4K source and render sharp 9:16 Shorts with zero pixelation.</p>
+          <div class="stack">
+            <label>YouTube Live / Video URL
+              <input id="yt-url" type="url" placeholder="https://www.youtube.com/live/..." />
+            </label>
+            <div class="row-2">
+              <label>Short Length (sec)
+                <input id="max-short-sec" type="number" value="120" min="15" max="180" />
+              </label>
+              <label>Output Quality
+                <select id="cut-quality">
+                  <option value="4k" selected>4K Ultra HD (2160×3840)</option>
+                  <option value="1080p">Full HD (1080×1920)</option>
+                </select>
+              </label>
+            </div>
+            <label>Framing Mode
+              <select id="cut-crop-mode">
+                <option value="sharp-blur" selected>Sharp 16:9 Gameplay + Blurred 4K Backdrop (No Pixelation)</option>
+                <option value="full-crop">Full-Screen 9:16 Center Crop</option>
+              </select>
+            </label>
+            <button id="btn-inspect-url" class="btn-primary" type="button">Find Highlights in Stream</button>
+          </div>
+          <div id="moments-output" class="console-box"></div>
+        </div>
+
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Custom Timestamp or Local Video</h2>
+            <span class="chip">Direct Cut</span>
+          </div>
+          <div class="row-2">
+            <label>Start (seconds) <input id="cut-start" type="number" value="0" min="0" /></label>
+            <label>End (seconds) <input id="cut-end" type="number" value="120" min="5" /></label>
+          </div>
+          <label class="mt-sm">Clip File Name
+            <input id="cut-name" type="text" value="007-4k-short" />
+          </label>
+          <button id="btn-cut-url" class="btn-dark mt-sm" type="button">Cut 4K Short from URL</button>
+
+          <hr class="sep" />
+
+          <label>Or Upload Local Recording (.mp4)
+            <input id="local-video-file" type="file" accept="video/*" />
+          </label>
+          <button id="btn-cut-local" class="btn-outline full mt-sm" type="button">Cut Local Video to 4K Short</button>
+          <div id="cut-output" class="console-box"></div>
+        </div>
+      </div>
+
+      <div class="surface mt-lg">
+        <div class="surface-head">
+          <h2>Stored Shorts Library</h2>
+          <span class="chip">Saved Locally</span>
+        </div>
+        <div id="shorts-gallery" class="video-grid"></div>
+      </div>
+    </section>
+
+    <!-- TAB 2: My Own Voice & Subtitles Studio -->
+    <section id="tab-voice" class="panel">
+      <div class="split-layout">
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Preview Short While You Narrate</h2>
+            <span class="chip">Your Real Voice</span>
+          </div>
+          <label>Select Stored Short
+            <select id="voice-short-select"></select>
+          </label>
+          <video id="voice-video-preview" controls class="studio-player mt-sm"></video>
+        </div>
+
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Record Your Voice &amp; Burn Subtitles</h2>
+            <span class="chip">Studio Audio Filter</span>
+          </div>
+          <p class="hint">Press Record and explain the game story in your own Tamil voice. We apply noise reduction + studio EQ, duck game audio, and burn Tamil subtitles automatically.</p>
+
+          <div class="mic-panel">
+            <div class="mic-top">
+              <span id="rec-dot" class="dot"></span>
+              <span id="rec-timer" class="timer">00:00</span>
+              <span class="muted">100% Free • Local Processing</span>
+            </div>
+            <div class="btn-row">
+              <button id="btn-rec-start" class="btn-primary" type="button">● Record My Voice</button>
+              <button id="btn-rec-stop" class="btn-dark" type="button" disabled>■ Stop</button>
+            </div>
+            <audio id="rec-preview" controls class="mt-sm" style="width:100%; display:none;"></audio>
+          </div>
+
+          <label class="mt-sm">Or Upload Pre-Recorded Voice File (.mp3 / .wav / .m4a)
+            <input id="direct-voice-file" type="file" accept="audio/*" />
+          </label>
+
+          <hr class="sep" />
+
+          <label>Tamil Subtitles Text (Optional — auto-timed across clip)
+            <textarea id="voice-script" rows="4" placeholder="நண்பர்களே, இந்த மிஷன்ல என்ன நடந்துச்சுன்னு பாருங்க..."></textarea>
+          </label>
+          <div class="row-2 mt-sm">
+            <label>Subtitle Duration (sec)
+              <input id="voice-dur" type="number" value="120" min="10" max="180" />
+            </label>
+            <label class="check-line">
+              <input id="burn-subtitles" type="checkbox" checked />
+              <span>Burn Tamil Subtitles</span>
+            </label>
+          </div>
+
+          <button id="btn-apply-direct" class="btn-primary full mt-sm" type="button">
+            Mix My Voice + Studio Audio + Subtitles (4K)
+          </button>
+          <div id="voice-apply-output" class="console-box"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: Live Boost & Criteria -->
+    <section id="tab-booster" class="panel">
+      <div class="split-layout">
+        <div class="surface">
+          <div class="surface-head">
+            <h2>YouTube Partner Criteria</h2>
+            <span class="chip">Monetization</span>
+          </div>
+          <div class="row-2">
+            <label>Subscribers <input id="subs" type="number" value="150" min="0" /></label>
+            <label>Watch Hours (365d) <input id="hours" type="number" value="320" min="0" /></label>
+            <label>Shorts Views (90d) <input id="shortsViews" type="number" value="45000" min="0" /></label>
+            <label>Goal Window (Days) <input id="targetDays" type="number" value="60" min="1" /></label>
+          </div>
+          <button id="btn-calc-criteria" class="btn-primary mt-sm" type="button">Calculate Daily Plan</button>
+          <div id="criteria-bars" class="bars mt-sm"></div>
+          <div id="criteria-output" class="console-box" style="display:none;"></div>
+        </div>
+
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Live Stream SEO Pack</h2>
+            <span class="chip">Pre-Live Push</span>
+          </div>
+          <div class="row-2">
+            <label>Topic / Game <input id="boost-topic" type="text" placeholder="e.g. 007 Final Mission" /></label>
+            <label>Niche <input id="boost-niche" type="text" value="Tamil Gaming" /></label>
+            <label>Language
+              <select id="boost-lang">
+                <option value="Tamil" selected>Tamil</option>
+                <option value="Tanglish">Tanglish</option>
+                <option value="English">English</option>
+              </select>
+            </label>
+            <label>Live URL <input id="boost-url" type="url" placeholder="https://youtube.com/live/..." /></label>
+          </div>
+          <button id="btn-boost-pack" class="btn-dark mt-sm" type="button">Generate SEO Pack</button>
+          <div id="boost-output" class="console-box"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: Push to YouTube & Channel Dashboard -->
+    <section id="tab-push" class="panel">
+      <div class="surface mb-lg">
+        <div class="surface-head">
+          <h2>My YouTube Channel Dashboard</h2>
+          <div class="btn-row">
+            <button id="btn-connect-yt" class="btn-primary" type="button">Connect YouTube Account</button>
+            <button id="btn-check-channel" class="btn-outline" type="button">Load Dashboard</button>
+          </div>
+        </div>
+        <div id="yt-dashboard-wrap">
+          <p class="hint">Click <strong>Connect YouTube Account</strong> (once) and then <strong>Load Dashboard</strong> to view your live channel stats, recent videos, fast-reach actions, and content update properties.</p>
+        </div>
+      </div>
+
+      <div class="split-layout">
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Fast-Reach Plan &amp; Content Properties</h2>
+            <span class="chip">Growth Blueprint</span>
+          </div>
+          <div id="yt-reach-output" class="console-box">Connect your YouTube channel above to see your personalized fast-reach plan and content update properties.</div>
+        </div>
+
+        <div class="surface">
+          <div class="surface-head">
+            <h2>Upload 4K Short + Custom Thumbnail</h2>
+            <span class="chip">#Shorts</span>
+          </div>
+          <div class="stack">
+            <label>Select Video to Upload
+              <select id="push-file-select"></select>
+            </label>
+            <label>Title (auto-adds #Shorts)
+              <input id="push-title" type="text" placeholder="007 Final Mission Tamil Story! #Shorts" />
+            </label>
+            <label>Description
+              <textarea id="push-desc" rows="3" placeholder="Watch the full live stream for more!"></textarea>
+            </label>
+            <label>Live Stream Link
+              <input id="push-live-url" type="url" placeholder="https://youtube.com/live/..." />
+            </label>
+            <label>Custom Thumbnail (optional .jpg / .png)
+              <input id="push-thumb-file" type="file" accept="image/*" />
+            </label>
+            <div class="row-2">
+              <label>Tags (comma-separated)
+                <input id="push-tags" type="text" value="tamil gaming, youtube shorts, 007, live" />
+              </label>
+              <label>Privacy
+                <select id="push-privacy">
+                  <option value="private">Private</option>
+                  <option value="unlisted">Unlisted</option>
+                  <option value="public">Public</option>
+                </select>
+              </label>
+            </div>
+            <button id="btn-upload-yt" class="btn-primary" type="button">Upload to YouTube</button>
+          </div>
+          <div id="push-output" class="console-box"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- API Keys Modal -->
+  <div id="keys-modal" class="modal-bg" style="display:none;">
+    <div class="modal-card">
+      <div class="surface-head">
+        <h2>API Keys &amp; YouTube OAuth</h2>
+        <button id="btn-close-keys" class="btn-outline" type="button">✕</button>
+      </div>
+      <div class="stack">
+        <label>YouTube OAuth Client ID <input id="key-yt-id" type="password" placeholder="...apps.googleusercontent.com" /></label>
+        <label>YouTube OAuth Client Secret <input id="key-yt-secret" type="password" placeholder="GOCSPX-..." /></label>
+        <label>Gemini API Key (optional, for AI SEO/Scripts) <input id="key-gemini" type="password" placeholder="AIzaSy..." /></label>
+        <button id="btn-save-keys" class="btn-primary" type="button">Save Keys</button>
+        <div id="keys-status" class="console-box" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

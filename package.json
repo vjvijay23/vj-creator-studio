@@ -1,0 +1,22 @@
+{
+  "name": "youtube-live-shorts-studio",
+  "version": "1.0.0",
+  "description": "YouTube Live Stream Booster, High-Moment 2-Minute Shorts Cutter, AI Voice Cloning Commentary, and YouTube Auto-Push Studio",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "@gradio/client": "^2.8.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ffmpeg-static": "^5.3.0",
+    "googleapis": "^144.0.0",
+    "msedge-tts": "^2.1.1",
+    "multer": "^1.4.5-lts.1"
+  }
+}
