@@ -20,6 +20,7 @@ import {
   COOKIES_PATH,
   cutJobs,
   createJob,
+  readShortsMeta,
   inspectYouTubeUrl,
   detectHighMoments,
   downloadAndCutShort,
@@ -145,10 +146,20 @@ app.get('/api/jobs/:id', (req, res) => {
 
 app.post('/api/shorts/cut', async (req, res) => {
   try {
-    const { url, startSeconds, endSeconds, outputName, quality = '1080p', cropMode = 'sharp-blur', async: isAsync = false } = req.body || {};
+    const {
+      url,
+      startSeconds,
+      endSeconds,
+      outputName,
+      streamTitle = '',
+      momentTitle = '',
+      quality = '1080p',
+      cropMode = 'sharp-blur',
+      async: isAsync = false,
+    } = req.body || {};
     if (isAsync) {
       const job = createJob(Math.max(15, (Number(endSeconds) || 120) - (Number(startSeconds) || 0)));
-      downloadAndCutShort({ url, startSeconds, endSeconds, outputName, quality, cropMode, job })
+      downloadAndCutShort({ url, startSeconds, endSeconds, outputName, streamTitle, momentTitle, quality, cropMode, job })
         .then((result) => {
           job.status = 'done';
           job.percent = 100;
@@ -244,23 +255,52 @@ app.get('/api/shorts/list', (_req, res) => {
 app.post('/api/shorts/auto-metadata', async (req, res) => {
   try {
     const { fileName = '', liveUrl = '' } = req.body || {};
-    const cleanName = fileName
-      .replace(/^voiced-/, '')
+    const allMeta = readShortsMeta();
+    const baseKey = path.basename(fileName).replace(/^voiced-/, '');
+    const saved = allMeta[baseKey] || allMeta[path.basename(fileName)] || {};
+
+    const cleanName = (saved.streamTitle || baseKey)
       .replace(/\.mp4$/i, '')
       .replace(/[_-]+/g, ' ')
       .replace(/\b\d{10,}\b/g, '')
       .trim();
-    const pack = await generateLiveBoostPack({
-      topic: cleanName || 'Epic Gaming Highlight',
-      niche: 'Tamil Gaming',
-      language: 'Tamil',
-      liveUrl,
-    });
-    const baseTitle = (pack.titles?.[0] || `${cleanName || 'Live Highlight'} Tamil`).slice(0, 88);
+
+    const finalStreamTitle = saved.streamTitle || cleanName || 'Gaming Live Highlight';
+    const finalMoment = saved.momentTitle ? ` — ${saved.momentTitle}` : '';
+    const finalLiveUrl = saved.liveUrl || liveUrl || '';
+    const timeRange =
+      saved.startFormatted && saved.endFormatted
+        ? `\n⏱️ Stream Moment: ${saved.startFormatted} – ${saved.endFormatted}`
+        : '';
+
+    const title = `${finalStreamTitle}${finalMoment} #Shorts`.slice(0, 95);
+    const description = [
+      `Watch this intense highlight from my "${finalStreamTitle}" live stream!`,
+      finalLiveUrl ? `\n🎬 Full Live Stream Replay: ${finalLiveUrl}${timeRange}` : timeRange.trim(),
+      `\n👍 Like, Share & Subscribe for daily Tamil Gaming Shorts and Live Streams!`,
+      `\n#Shorts #TamilGaming #GamingHighlights #YouTubeLive`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const baseTag = finalStreamTitle.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+    const tags = [
+      baseTag,
+      `${baseTag} highlights`,
+      'tamil gaming',
+      'tamil gaming shorts',
+      'youtube shorts',
+      'live stream highlights',
+      'gaming climax',
+    ]
+      .filter(Boolean)
+      .join(', ');
+
     res.json({
-      title: baseTitle.includes('#Shorts') ? baseTitle : `${baseTitle} #Shorts`,
-      description: pack.description || `Watch the full live stream!${liveUrl ? `\n${liveUrl}` : ''}`,
-      tags: (pack.tags || ['tamil gaming', 'youtube shorts', 'live highlights']).join(', '),
+      title,
+      description,
+      tags,
+      liveUrl: finalLiveUrl,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

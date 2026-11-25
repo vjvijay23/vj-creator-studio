@@ -139,8 +139,8 @@ async function autoFillPushMetadata(fileName) {
     $('push-title').value = meta.title;
     $('push-desc').value = meta.description;
     $('push-tags').value = meta.tags;
-    if (liveUrl && !$('push-live-url').value) {
-      $('push-live-url').value = liveUrl;
+    if (meta.liveUrl) {
+      $('push-live-url').value = meta.liveUrl;
     }
   } catch (err) {
     console.error('Auto-metadata error:', err);
@@ -195,6 +195,14 @@ $('voice-short-select').addEventListener('change', (e) => {
 });
 
 let lastDetectedMoments = [];
+let lastStreamInfo = { title: '', url: '' };
+
+function makeCleanSlug(text, fallback = 'Highlight') {
+  return (text || fallback)
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 36) || fallback;
+}
 
 // Tab 1: 4K Shorts Cutter
 $('btn-inspect-url').addEventListener('click', async () => {
@@ -210,16 +218,18 @@ $('btn-inspect-url').addEventListener('click', async () => {
     });
     const { info, moments } = data;
     lastDetectedMoments = moments || [];
+    lastStreamInfo = { title: info.title || 'Live Stream', url: info.webpageUrl || $('yt-url').value };
+    $('cut-name').value = `${makeCleanSlug(info.title, 'Stream')}_Highlight`;
     $('moments-output').innerHTML =
       `<div><strong>${info.title}</strong> (${Math.round(info.duration)}s)</div>` +
       moments
         .map(
-          (m) => `
+          (m, idx) => `
         <div class="moment-item">
           <div><strong>${m.title}</strong> • Score: ${m.score}/100</div>
           <div class="muted">${m.startFormatted} → ${m.endFormatted} (${m.durationSeconds}s)</div>
           <div class="muted">${m.reason}</div>
-          <button class="btn-dark mt-sm" type="button" onclick="cutMoment(${m.startSeconds}, ${m.endSeconds}, '${m.id}')">
+          <button class="btn-dark mt-sm" type="button" onclick="cutMoment(${m.startSeconds}, ${m.endSeconds}, ${idx})">
             Cut 4K Short
           </button>
         </div>`
@@ -230,10 +240,14 @@ $('btn-inspect-url').addEventListener('click', async () => {
   }
 });
 
-window.cutMoment = (startSeconds, endSeconds, id) => {
+window.cutMoment = (startSeconds, endSeconds, idx) => {
+  const m = lastDetectedMoments[idx] || {};
+  const baseSlug = makeCleanSlug(lastStreamInfo.title, 'Live_Highlight');
+  const partLabel = `Part_${idx + 1}`;
   $('cut-start').value = startSeconds;
   $('cut-end').value = endSeconds;
-  $('cut-name').value = `${id}-4k-${Date.now()}`;
+  $('cut-name').value = `${baseSlug}_${partLabel}`;
+  $('btn-cut-url').dataset.momentTitle = m.title || `Highlight ${idx + 1}`;
   $('btn-cut-url').click();
 };
 
@@ -305,6 +319,8 @@ $('btn-cut-url').addEventListener('click', async () => {
         startSeconds: Number($('cut-start').value),
         endSeconds: Number($('cut-end').value),
         outputName: $('cut-name').value,
+        streamTitle: lastStreamInfo.title || $('cut-name').value,
+        momentTitle: $('btn-cut-url').dataset.momentTitle || 'Highlight Moment',
         quality: $('cut-quality').value,
         cropMode: $('cut-crop-mode').value,
         async: true,

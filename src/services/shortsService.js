@@ -8,6 +8,20 @@ import { getFfmpegPath, getYtdlpPath } from '../config/binaries.js';
 
 const execFileAsync = promisify(execFile);
 export const COOKIES_PATH = path.join(DATA_DIR, 'cookies.txt');
+const META_PATH = path.join(DATA_DIR, 'shorts_meta.json');
+
+export function readShortsMeta() {
+  try {
+    if (fs.existsSync(META_PATH)) return JSON.parse(fs.readFileSync(META_PATH, 'utf-8'));
+  } catch {}
+  return {};
+}
+
+export function saveShortMeta(fileName, meta) {
+  const all = readShortsMeta();
+  all[fileName] = { ...(all[fileName] || {}), ...meta, updatedAt: new Date().toISOString() };
+  fs.writeFileSync(META_PATH, JSON.stringify(all, null, 2), 'utf-8');
+}
 
 export const cutJobs = new Map();
 
@@ -220,6 +234,8 @@ export async function downloadAndCutShort({
   startSeconds = 0,
   endSeconds = 120,
   outputName,
+  streamTitle = '',
+  momentTitle = '',
   quality = '1080p',
   cropMode = 'sharp-blur',
   job = null,
@@ -319,10 +335,20 @@ export async function downloadAndCutShort({
 
   await runFfmpegWithProgress(args, duration, job);
 
+  const fileName = path.basename(outPath);
+  saveShortMeta(fileName, {
+    streamTitle: streamTitle || safeBase.replace(/[_-]+/g, ' '),
+    momentTitle: momentTitle || 'Highlight Moment',
+    liveUrl: url || '',
+    startFormatted: formatTimestamp(start),
+    endFormatted: formatTimestamp(end),
+    durationSeconds: duration,
+  });
+
   return {
-    fileName: path.basename(outPath),
+    fileName,
     filePath: outPath,
-    publicUrl: `/media/shorts/${path.basename(outPath)}`,
+    publicUrl: `/media/shorts/${fileName}`,
     durationSeconds: duration,
     resolution: `${targetW}x${targetH}`,
   };
