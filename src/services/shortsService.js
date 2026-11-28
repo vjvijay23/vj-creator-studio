@@ -196,18 +196,21 @@ export async function inspectYouTubeUrl(url) {
   }
 
   const msg = String(lastErr?.message || '');
-  if (msg.includes('not a bot')) {
-    // Cloud server IP bot-check: fall back to YouTube API / oEmbed for metadata inspection
-    return await inspectViaYouTubeFallback(url);
-  }
   if (msg.includes('Sign in to confirm your age')) {
     throw new Error(
       'This YouTube stream is age-restricted. Open "API Keys" in the top bar and upload your YouTube cookies.txt file (or upload the downloaded .mp4 directly on the right).'
     );
   }
-  throw new Error(
-    `Could not inspect YouTube URL via yt-dlp (${msg}). Make sure yt-dlp is installed and the URL is public.`
-  );
+
+  // On cloud hosts (like Render), yt-dlp may fail due to IP/bot checks or player_client restrictions.
+  // Always fall back to YouTube Data API / public oEmbed so inspection still succeeds.
+  try {
+    return await inspectViaYouTubeFallback(url);
+  } catch {
+    throw new Error(
+      `Could not inspect YouTube URL via yt-dlp (${msg}). Make sure yt-dlp is installed and the URL is public.`
+    );
+  }
 }
 
 export async function detectHighMoments({
